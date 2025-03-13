@@ -608,6 +608,16 @@ std::vector<const T*> ConstPtrInVectorWrapper(const std::vector<std::unique_ptr<
   return ret;
 }
 
+
+template<typename T>
+std::vector<const T*> ConstPtrInVectorWrapper(const std::vector<std::shared_ptr<T>>& input) {
+  std::vector<const T*> ret;
+  for (auto t = input.begin(); t !=input.end(); ++t) {
+    ret.push_back(t->get());
+  }
+  return ret;
+}
+
 template<typename T1, typename T2>
 inline static void SortForPair(std::vector<T1>* keys, std::vector<T2>* values, size_t start, bool is_reverse = false) {
   std::vector<std::pair<T1, T2>> arr;

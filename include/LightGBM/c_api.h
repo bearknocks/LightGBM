@@ -721,6 +721,15 @@ LIGHTGBM_C_EXPORT int LGBM_BoosterMerge(BoosterHandle handle,
                                         BoosterHandle other_handle);
 
 /*!
+ * \brief Copy model from ``other_handle`` into ``handle``.
+ * \param handle Handle of booster, will share module with another booster
+ * \param other_handle Other handle of booster
+ * \return 0 when succeed, -1 when failure happens
+ */
+LIGHTGBM_C_EXPORT int LGBM_BoosterCopy(BoosterHandle handle,
+                                        BoosterHandle other_handle);
+
+/*!
  * \brief Add new validation data to booster.
  * \param handle Handle of booster
  * \param valid_data Validation dataset

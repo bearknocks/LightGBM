@@ -198,6 +198,22 @@ class Booster {
     boosting_->MergeFrom(other->boosting_.get());
   }
 
+  void CopyFrom(const Booster* other) {
+    UNIQUE_LOCK(mutex_)
+    boosting_ = other->boosting_;
+    train_data_ = nullptr;
+    for (int i=0; i<PREDICTOR_TYPES; i++) {
+      single_row_predictor_[i] = other->single_row_predictor_[i];
+    }
+
+    config_ = other->config_;
+    train_metric_ = other->train_metric_;
+    valid_metrics_ = other->valid_metrics_;
+    objective_fun_ = other->objective_fun_;
+    std::shared_ptr<Boosting> boosting_;
+    std::shared_ptr<SingleRowPredictorInner> single_row_predictor_[PREDICTOR_TYPES];
+  }
+
   ~Booster() {
   }
 
@@ -874,17 +890,17 @@ class Booster {
 
  private:
   const Dataset* train_data_;
-  std::unique_ptr<Boosting> boosting_;
-  std::unique_ptr<SingleRowPredictorInner> single_row_predictor_[PREDICTOR_TYPES];
+  std::shared_ptr<Boosting> boosting_;
+  std::shared_ptr<SingleRowPredictorInner> single_row_predictor_[PREDICTOR_TYPES];
 
   /*! \brief All configs */
   Config config_;
   /*! \brief Metric for training data */
-  std::vector<std::unique_ptr<Metric>> train_metric_;
+  std::vector<std::shared_ptr<Metric>> train_metric_;
   /*! \brief Metrics for validation data */
-  std::vector<std::vector<std::unique_ptr<Metric>>> valid_metrics_;
+  std::vector<std::vector<std::shared_ptr<Metric>>> valid_metrics_;
   /*! \brief Training objective function */
-  std::unique_ptr<ObjectiveFunction> objective_fun_;
+  std::shared_ptr<ObjectiveFunction> objective_fun_;
   /*! \brief mutex for threading safe call */
   mutable yamc::alternate::shared_mutex mutex_;
 };
@@ -2006,6 +2022,15 @@ int LGBM_BoosterMerge(BoosterHandle handle,
   Booster* ref_booster = reinterpret_cast<Booster*>(handle);
   Booster* ref_other_booster = reinterpret_cast<Booster*>(other_handle);
   ref_booster->MergeFrom(ref_other_booster);
+  API_END();
+}
+
+int LGBM_BoosterCopy(BoosterHandle handle,
+                      BoosterHandle other_handle) {
+  API_BEGIN();
+  Booster* ref_booster = reinterpret_cast<Booster*>(handle);
+  Booster* ref_other_booster = reinterpret_cast<Booster*>(other_handle);
+  ref_booster->CopyFrom(ref_other_booster);
   API_END();
 }
 
