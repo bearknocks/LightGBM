@@ -2026,11 +2026,12 @@ int LGBM_BoosterMerge(BoosterHandle handle,
 }
 
 int LGBM_BoosterCopy(BoosterHandle handle,
-                      BoosterHandle other_handle) {
+                      BoosterHandle * out) {
   API_BEGIN();
   Booster* ref_booster = reinterpret_cast<Booster*>(handle);
-  Booster* ref_other_booster = reinterpret_cast<Booster*>(other_handle);
-  ref_booster->CopyFrom(ref_other_booster);
+  auto ret = std::unique_ptr<Booster>(new Booster(nullptr));
+  ret->CopyFrom(ref_booster);
+  *out = ret.release();
   API_END();
 }
 
