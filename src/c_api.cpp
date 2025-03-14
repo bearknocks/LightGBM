@@ -508,34 +508,11 @@ class Booster {
                std::function<std::vector<std::pair<int, double>>(int row_idx)> get_row_fun,
                const Config& config,
                double* out_result, int64_t* out_len) const {
-    class ReferenceCounter {
-    public:
-        ReferenceCounter(int& counter) : ref_counter(counter) {
-            ++ref_counter;
-        }
 
-        ~ReferenceCounter() {
-            --ref_counter;
-        }
-
-    private:
-        int& ref_counter;
-    };
-    class LockGuard {
-    public:
-        LockGuard(std::mutex& mtx) : mtx_(mtx) {
-            mtx_.lock();
-        }
-
-        ~LockGuard() {
-            mtx_.unlock();
-        }
-        std::mutex & mtx_;
-    };
     std::unique_lock<std::mutex> lock(cv_mutex_);
     if(cv_.wait_for(lock, std::chrono::milliseconds(config.predict_wait_timeout), [&] { return predict_process_cnt_ == 0; })) {
-      LockGuard g(cv_mutex_);
-      ReferenceCounter rc(predict_process_cnt_);
+      predict_process_cnt_ ++;
+      cv_mutex_.unlock();
       auto predictor = CreatePredictor(start_iteration, num_iteration, predict_type, ncol, config);
       bool is_predict_leaf = false;
       bool predict_contrib = false;
@@ -555,9 +532,12 @@ class Booster {
         pred_fun(one_row, pred_wrt_ptr);
         OMP_LOOP_EX_END();
       }
+      cv_mutex_.lock();
+      predict_process_cnt_ --;
+      cv_.notify_one();
       OMP_THROW_EX();
       *out_len = num_pred_in_one_row * nrow;
-      cv_.notify_one();
+
     } else {
       //Log::Warning("Wait timeout for predict, current predict thread is %d", predict_process_cnt_.load());
       *out_len = 0;
