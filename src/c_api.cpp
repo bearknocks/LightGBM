@@ -524,15 +524,15 @@ class Booster {
     uint64_t predict_start_time_ = get_time_ms();
     if(config.predict_wait_timeout>0){
       while(true) {
-        if (predict_process_cnt_ > 2 && get_time_ms() - predict_start_time_ < static_cast<uint64_t>(config.predict_wait_timeout)) {
+        if(predict_process_cnt_ <= 1){
+          break;
+        } else if (predict_process_cnt_ > 1 && get_time_ms() - predict_start_time_ < static_cast<uint64_t>(config.predict_wait_timeout)) {
           std::this_thread::yield();
         } else if(get_time_ms()-predict_start_time_ > static_cast<uint64_t>(config.predict_wait_timeout)) {
-          int current_predict_thread = predict_process_cnt_.load();
-          Log::Warning("Wait timeout for predict, current predict thread is %d", current_predict_thread);
+          //int current_predict_thread = predict_process_cnt_.load();
+          //Log::Warning("Wait timeout for predict, current predict thread is %d", current_predict_thread);
           *out_len = 0;
           return;
-        } else {
-          break;
         }
       }
     }
