@@ -508,56 +508,61 @@ class Booster {
                std::function<std::vector<std::pair<int, double>>(int row_idx)> get_row_fun,
                const Config& config,
                double* out_result, int64_t* out_len) const {
-    class GauredCounter {
-     public:
-      explicit GauredCounter(std::atomic<int> * val) : val_(val) {
-        val_->fetch_add(1);
-      }
-      ~GauredCounter() {
-        val_->fetch_sub(1);
-      }
-
-     private:
-      std::atomic<int> * val_;
-    };
-    GauredCounter gc(&predict_process_cnt_);
-    uint64_t predict_start_time_ = get_time_ms();
-    if(config.predict_wait_timeout>0){
-      while(true) {
-        if(predict_process_cnt_ <= 1){
-          break;
-        } else if (predict_process_cnt_ > 1 && get_time_ms() - predict_start_time_ < static_cast<uint64_t>(config.predict_wait_timeout)) {
-          std::this_thread::yield();
-        } else if(get_time_ms()-predict_start_time_ > static_cast<uint64_t>(config.predict_wait_timeout)) {
-          //int current_predict_thread = predict_process_cnt_.load();
-          //Log::Warning("Wait timeout for predict, current predict thread is %d", current_predict_thread);
-          *out_len = 0;
-          return;
+    class ReferenceCounter {
+    public:
+        ReferenceCounter(int& counter) : ref_counter(counter) {
+            ++ref_counter;
         }
+
+        ~ReferenceCounter() {
+            --ref_counter;
+        }
+
+    private:
+        int& ref_counter;
+    };
+    class LockGuard {
+    public:
+        LockGuard(std::mutex& mtx) : mtx_(mtx) {
+            mtx_.lock();
+        }
+
+        ~LockGuard() {
+            mtx_.unlock();
+        }
+        std::mutex & mtx_;
+    };
+    std::unique_lock<std::mutex> lock(cv_mutex_);
+    if(cv_.wait_for(lock, std::chrono::milliseconds(config.predict_wait_timeout), [&] { return predict_process_cnt_ == 0; })) {
+      LockGuard g(cv_mutex_);
+      ReferenceCounter rc(predict_process_cnt_);
+      auto predictor = CreatePredictor(start_iteration, num_iteration, predict_type, ncol, config);
+      bool is_predict_leaf = false;
+      bool predict_contrib = false;
+      if (predict_type == C_API_PREDICT_LEAF_INDEX) {
+        is_predict_leaf = true;
+      } else if (predict_type == C_API_PREDICT_CONTRIB) {
+        predict_contrib = true;
       }
+      int64_t num_pred_in_one_row = boosting_->NumPredictOneRow(start_iteration, num_iteration, is_predict_leaf, predict_contrib);
+      auto pred_fun = predictor->GetPredictFunction();
+      OMP_INIT_EX();
+      #pragma omp parallel for num_threads(OMP_NUM_THREADS()) schedule(static)
+      for (int i = 0; i < nrow; ++i) {
+        OMP_LOOP_EX_BEGIN();
+        auto one_row = get_row_fun(i);
+        auto pred_wrt_ptr = out_result + static_cast<size_t>(num_pred_in_one_row) * i;
+        pred_fun(one_row, pred_wrt_ptr);
+        OMP_LOOP_EX_END();
+      }
+      OMP_THROW_EX();
+      *out_len = num_pred_in_one_row * nrow;
+      cv_.notify_one();
+    } else {
+      //Log::Warning("Wait timeout for predict, current predict thread is %d", predict_process_cnt_.load());
+      *out_len = 0;
+      return;
     }
-    SHARED_LOCK(mutex_);
-    auto predictor = CreatePredictor(start_iteration, num_iteration, predict_type, ncol, config);
-    bool is_predict_leaf = false;
-    bool predict_contrib = false;
-    if (predict_type == C_API_PREDICT_LEAF_INDEX) {
-      is_predict_leaf = true;
-    } else if (predict_type == C_API_PREDICT_CONTRIB) {
-      predict_contrib = true;
-    }
-    int64_t num_pred_in_one_row = boosting_->NumPredictOneRow(start_iteration, num_iteration, is_predict_leaf, predict_contrib);
-    auto pred_fun = predictor->GetPredictFunction();
-    OMP_INIT_EX();
-    #pragma omp parallel for num_threads(OMP_NUM_THREADS()) schedule(static)
-    for (int i = 0; i < nrow; ++i) {
-      OMP_LOOP_EX_BEGIN();
-      auto one_row = get_row_fun(i);
-      auto pred_wrt_ptr = out_result + static_cast<size_t>(num_pred_in_one_row) * i;
-      pred_fun(one_row, pred_wrt_ptr);
-      OMP_LOOP_EX_END();
-    }
-    OMP_THROW_EX();
-    *out_len = num_pred_in_one_row * nrow;
   }
 
   void PredictSparse(int start_iteration, int num_iteration, int predict_type, int64_t nrow, int ncol,
@@ -937,7 +942,9 @@ class Booster {
   std::shared_ptr<ObjectiveFunction> objective_fun_;
   /*! \brief mutex for threading safe call */
   mutable yamc::alternate::shared_mutex mutex_;
-  mutable std::atomic<int> predict_process_cnt_;
+  mutable int predict_process_cnt_ = 0;
+  mutable std::condition_variable cv_;
+  mutable std::mutex cv_mutex_;
 };
 
 }  // namespace LightGBM
