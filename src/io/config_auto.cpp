@@ -322,6 +322,7 @@ const std::unordered_set<std::string>& Config::parameter_set() {
   "gpu_device_id",
   "gpu_use_dp",
   "num_gpu",
+  "predict_wait_timeout",
   });
   return params;
 }
@@ -667,6 +668,8 @@ void Config::GetMembersFromString(const std::unordered_map<std::string, std::str
 
   GetInt(params, "num_gpu", &num_gpu);
   CHECK_GT(num_gpu, 0);
+
+  GetInt(params, "predict_wait_timeout", &predict_wait_timeout);
 }
 
 std::string Config::SaveMembersToString() const {
@@ -786,6 +789,7 @@ std::string Config::SaveMembersToString() const {
   str_buf << "[gpu_device_id: " << gpu_device_id << "]\n";
   str_buf << "[gpu_use_dp: " << gpu_use_dp << "]\n";
   str_buf << "[num_gpu: " << num_gpu << "]\n";
+  str_buf << "[predict_wait_timeout: " << predict_wait_timeout << "]\n";
   return str_buf.str();
 }
 
@@ -931,6 +935,7 @@ const std::unordered_map<std::string, std::vector<std::string>>& Config::paramet
     {"gpu_device_id", {}},
     {"gpu_use_dp", {}},
     {"num_gpu", {}},
+    {"predict_wait_timeout", {}},
   });
   return map;
 }

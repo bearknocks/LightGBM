@@ -28,6 +28,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <vector>
+#include <atomic>
 
 #include "application/predictor.hpp"
 #include <LightGBM/utils/yamc/alternate_shared_mutex.hpp>
@@ -498,10 +499,43 @@ class Booster {
                         config.pred_early_stop, config.pred_early_stop_freq, config.pred_early_stop_margin);
   }
 
+  uint64_t get_time_ms() const {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count());
+  }
+
   void Predict(int start_iteration, int num_iteration, int predict_type, int nrow, int ncol,
                std::function<std::vector<std::pair<int, double>>(int row_idx)> get_row_fun,
                const Config& config,
                double* out_result, int64_t* out_len) const {
+    class GauredCounter {
+     public:
+      explicit GauredCounter(std::atomic<int> * val) : val_(val) {
+        val_->fetch_add(1);
+      }
+      ~GauredCounter() {
+        val_->fetch_sub(1);
+      }
+
+     private:
+      std::atomic<int> * val_;
+    };
+    GauredCounter gc(&predict_process_cnt_);
+    uint64_t predict_start_time_ = get_time_ms();
+    if(config.predict_wait_timeout>0){
+      while(true) {
+        if (predict_process_cnt_ > 2 && get_time_ms() - predict_start_time_ < static_cast<uint64_t>(config.predict_wait_timeout)) {
+          std::this_thread::yield();
+        } else if(get_time_ms()-predict_start_time_ > static_cast<uint64_t>(config.predict_wait_timeout)) {
+          int current_predict_thread = predict_process_cnt_.load();
+          Log::Warning("Wait timeout for predict, current predict thread is %d", current_predict_thread);
+          *out_len = 0;
+          return;
+        } else {
+          break;
+        }
+      }
+    }
     SHARED_LOCK(mutex_);
     auto predictor = CreatePredictor(start_iteration, num_iteration, predict_type, ncol, config);
     bool is_predict_leaf = false;
@@ -903,6 +937,7 @@ class Booster {
   std::shared_ptr<ObjectiveFunction> objective_fun_;
   /*! \brief mutex for threading safe call */
   mutable yamc::alternate::shared_mutex mutex_;
+  mutable std::atomic<int> predict_process_cnt_;
 };
 
 }  // namespace LightGBM

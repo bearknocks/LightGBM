@@ -1135,6 +1135,11 @@ struct Config {
   // desc = **Note**: can be used only in CUDA implementation (``device_type="cuda"``)
   int num_gpu = 1;
 
+  // predict_wait_timeout = 0
+  // desc = timeout in miliseconds for waiting for predict start the prediction task
+  // desc = ``0`` means no timeout
+  int predict_wait_timeout = 0;
+
   #ifndef __NVCC__
   #pragma endregion
 
