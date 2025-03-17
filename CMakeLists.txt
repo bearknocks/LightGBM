@@ -1,5 +1,5 @@
 option(USE_MPI "Enable MPI-based distributed learning" OFF)
-option(USE_OPENMP "Enable OpenMP" ON)
+option(USE_OPENMP "Enable OpenMP" OFF)
 option(USE_GPU "Enable GPU-accelerated training" OFF)
 option(USE_SWIG "Enable SWIG to generate Java API" OFF)
 option(USE_TIMETAG "Set to ON to output time costs" OFF)
